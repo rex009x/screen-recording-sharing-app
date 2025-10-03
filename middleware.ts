@@ -1,13 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "./lib/auth";
 import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import aj from "./lib/arcjet";
-import { detectBot, shield } from "@arcjet/next";
-import { createMiddleware } from "@arcjet/next";
+import { createMiddleware, detectBot, shield } from "@arcjet/next";
 
-export async function middleware(request: NextRequest, response: NextResponse) {
+const ajmiddleware = createMiddleware(
+  aj
+    .withRule(
+      shield({
+        mode: "LIVE",
+      })
+    )
+    .withRule(
+      detectBot({
+        mode: "LIVE",
+        allow: ["CATEGORY:SEARCH_ENGINE", "G00G1E_CRAWLER"], // allow other bots if you want to.
+      })
+    )
+);
+
+export async function middleware(request: NextRequest) {
+  // Run Arcjet middleware first
+  const arcjetResponse = await ajmiddleware(request);
+  if (arcjetResponse) {
+    return arcjetResponse;
+  }
+
+  // Then run your auth logic
   const session = await auth.api.getSession({
-    headers: await headers(),
+    headers: request.headers,
   });
 
   if (!session) {
@@ -16,15 +37,6 @@ export async function middleware(request: NextRequest, response: NextResponse) {
 
   return NextResponse.next();
 }
-
-const validate = aj.withRule(shield({ mode: "LIVE" })).withRule(
-  detectBot({
-    mode: "LIVE",
-    allow: ["CATEGORY:SEARCH_ENGINE", "GOOGLE_CRAWLER"],
-  })
-);
-
-export default createMiddleware(validate);
 
 export const config = {
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico|sign-in|assets).*)"],
